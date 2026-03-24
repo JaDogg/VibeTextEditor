@@ -212,6 +212,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
 
     var currentFontName = kDefaultFontName
     var currentFontSize = kDefaultFontSize
+    var pendingOpenURL: URL?
 
     // MARK: - App Lifecycle
 
@@ -219,10 +220,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         loadFontPrefs()
         buildWindow()
         buildMenu()
+        if let url = pendingOpenURL {
+            pendingOpenURL = nil
+            openFile(url: url)
+        }
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-        openFile(url: URL(fileURLWithPath: filename))
+        let url = URL(fileURLWithPath: filename)
+        if textView == nil {
+            pendingOpenURL = url   // window not ready yet; defer until applicationDidFinishLaunching
+        } else {
+            openFile(url: url)
+        }
         return true
     }
 
