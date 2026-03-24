@@ -581,6 +581,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenu.addItem(.separator())
         editMenu.addItem(NSMenuItem(title: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f"))
+        editMenu.addItem(.separator())
+        let dupLine = NSMenuItem(title: "Duplicate Line", action: #selector(duplicateLine), keyEquivalent: "d")
+        dupLine.keyEquivalentModifierMask = .command
+        editMenu.addItem(dupLine)
         let goToLine = NSMenuItem(title: "Go to Line…", action: #selector(goToLine), keyEquivalent: "l")
         goToLine.keyEquivalentModifierMask = .command
         editMenu.addItem(goToLine)
@@ -767,6 +771,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
             guard let self, self.isModified, let url = self.currentFileURL else { return }
             _ = self.write(to: url)
         }
+    }
+
+    // MARK: - Duplicate Line
+
+    @objc func duplicateLine() {
+        let str       = textView.string as NSString
+        let sel       = textView.selectedRange()
+        let lineRange = str.lineRange(for: NSRange(location: sel.location, length: 0))
+        let lineText  = str.substring(with: lineRange)
+        // If the line has no trailing newline (last line of file), prepend one
+        let toInsert  = lineText.hasSuffix("\n") ? lineText : "\n" + lineText
+        let insertAt  = lineRange.upperBound
+
+        if textView.shouldChangeText(in: NSRange(location: insertAt, length: 0),
+                                      replacementString: toInsert) {
+            textView.textStorage?.insert(
+                NSAttributedString(string: toInsert, attributes: textView.typingAttributes),
+                at: insertAt)
+            textView.didChangeText()
+        }
+        // Place cursor on duplicate at the same column
+        let col         = sel.location - lineRange.location
+        let newLineStart = insertAt + (toInsert.hasPrefix("\n") ? 1 : 0)
+        textView.setSelectedRange(NSRange(location: newLineStart + col, length: 0))
+        isModified = true; window.isDocumentEdited = true; scheduleAutoSave()
     }
 
     // MARK: - Word Wrap
