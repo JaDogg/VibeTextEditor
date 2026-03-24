@@ -72,6 +72,52 @@ let kThemes: [Theme] = [
     Theme(name: "Tokyo Night",     background: NSColor(rgb: 0x1A1B2E),    foreground: NSColor(rgb: 0xA9B1D6)),
 ]
 
+// MARK: - Status Bar
+
+let kStatusBarHeight: CGFloat = 22
+
+class StatusBarView: NSView {
+    private let posLabel   = NSTextField(labelWithString: "")
+    private let statsLabel = NSTextField(labelWithString: "")
+
+    var bgColor:     NSColor = NSColor(white: 0.95, alpha: 1) { didSet { needsDisplay = true } }
+    var borderColor: NSColor = NSColor(white: 0.76, alpha: 1) { didSet { needsDisplay = true } }
+    var fgColor:     NSColor = NSColor(white: 0.45, alpha: 1) { didSet {
+        posLabel.textColor   = fgColor
+        statsLabel.textColor = fgColor
+    }}
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        for lbl in [posLabel, statsLabel] {
+            lbl.font            = font
+            lbl.isBezeled       = false
+            lbl.drawsBackground = false
+            lbl.isEditable      = false
+            lbl.isSelectable    = false
+            addSubview(lbl)
+        }
+        posLabel.frame   = NSRect(x: 8, y: 3, width: 200, height: 16)
+        statsLabel.frame = NSRect(x: frame.width - 208, y: 3, width: 200, height: 16)
+        statsLabel.alignment         = .right
+        statsLabel.autoresizingMask  = [.minXMargin]
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        bgColor.setFill(); dirtyRect.fill()
+        borderColor.setFill()
+        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
+    }
+
+    func update(line: Int, col: Int, words: Int, chars: Int) {
+        posLabel.stringValue   = "Line \(line), Col \(col)"
+        statsLabel.stringValue = "\(words) words · \(chars) chars"
+    }
+}
+
 // MARK: - Line Number Ruler View
 
 // Plain NSView — no NSScrollView ruler integration (which was hiding the text view).
@@ -240,6 +286,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     var textView: EditorTextView!
     var scrollView: NSScrollView!
     var rulerView: LineNumberRulerView!
+    var statusBarView: StatusBarView!
 
     var currentFileURL: URL?
     var isModified     = false
@@ -334,9 +381,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         let rw = LineNumberRulerView.width
 
         // ── Scroll view (right of ruler) ──────────────────────────────────────
-        scrollView = NSScrollView(frame: NSRect(x: rw, y: 0,
+        scrollView = NSScrollView(frame: NSRect(x: rw, y: kStatusBarHeight,
                                                width: frame.width - rw,
-                                               height: frame.height))
+                                               height: frame.height - kStatusBarHeight))
         scrollView.borderType            = .noBorder
         scrollView.autoresizingMask      = [.width, .height]
         scrollView.hasVerticalScroller   = true
@@ -382,15 +429,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         scrollView.documentView = textView
 
         // ── Line number view (plain NSView, left strip) ───────────────────────
-        rulerView = LineNumberRulerView(frame: NSRect(x: 0, y: 0,
+        rulerView = LineNumberRulerView(frame: NSRect(x: 0, y: kStatusBarHeight,
                                                       width: rw,
-                                                      height: frame.height))
+                                                      height: frame.height - kStatusBarHeight))
         rulerView.autoresizingMask = [.height]
         rulerView.setup(with: textView, scrollView: scrollView)
 
-        // ── Container holds both side by side ─────────────────────────────────
+        // ── Status bar ────────────────────────────────────────────────────────
+        statusBarView = StatusBarView(frame: NSRect(x: 0, y: 0,
+                                                    width: frame.width,
+                                                    height: kStatusBarHeight))
+        statusBarView.autoresizingMask = [.width]
+
+        // ── Container holds ruler + scroll view + status bar ──────────────────
         let container = NSView(frame: NSRect(origin: .zero, size: frame.size))
         container.autoresizingMask = [.width, .height]
+        container.addSubview(statusBarView)
         container.addSubview(rulerView)
         container.addSubview(scrollView)
 
@@ -440,6 +494,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         rulerView.rulerBorder = bg.blended(withFraction: 0.20,  of: blend) ?? bg
         rulerView.rulerFg     = fg.withAlphaComponent(0.5)
         rulerView.needsDisplay = true
+
+        statusBarView.bgColor     = rulerView.rulerBg
+        statusBarView.borderColor = rulerView.rulerBorder
+        statusBarView.fgColor     = rulerView.rulerFg
+        statusBarView.needsDisplay = true
 
         applyFontToStorage()
     }
@@ -569,6 +628,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
             window.title    = url.lastPathComponent
             textView.scrollToBeginningOfDocument(nil)
             rulerView.refresh()
+            updateStatusBar()
         } catch {
             let alert = NSAlert(error: error); alert.runModal()
         }
@@ -619,13 +679,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         }
     }
 
-    // MARK: - NSTextDelegate
+    // MARK: - NSTextDelegate / NSTextViewDelegate
 
     func textDidChange(_ notification: Notification) {
         isModified = true
         window.isDocumentEdited = true
         rulerView.needsDisplay  = true
+        updateStatusBar()
         scheduleAutoSave()
+    }
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+        updateStatusBar()
+    }
+
+    func updateStatusBar() {
+        let str = textView.string
+        let loc = textView.selectedRange().location
+        let prefix = (str as NSString).substring(to: min(loc, str.utf16.count))
+        let lines  = prefix.components(separatedBy: "\n")
+        let line   = lines.count
+        let col    = (lines.last?.count ?? 0) + 1
+        let words  = str.isEmpty ? 0 : str.components(separatedBy: .whitespacesAndNewlines)
+                                           .filter { !$0.isEmpty }.count
+        statusBarView.update(line: line, col: col, words: words, chars: str.count)
     }
 
     // MARK: - Font
