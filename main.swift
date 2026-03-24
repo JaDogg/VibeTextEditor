@@ -265,6 +265,53 @@ class EditorTextView: NSTextView {
                             height: max(minSize.height, ceil(bottomY + insetH * 2))))
     }
 
+    // Tab with a multi-line selection indents all selected lines;
+    // single-line/no-selection falls through to normal tab insertion.
+    override func insertTab(_ sender: Any?) {
+        let sel = selectedRange()
+        let str = string as NSString
+        if sel.length > 0 && (str.substring(with: sel).contains("\n")) {
+            shiftLines(dedent: false); return
+        }
+        super.insertTab(sender)
+    }
+
+    override func insertBacktab(_ sender: Any?) {
+        shiftLines(dedent: true)
+    }
+
+    private func shiftLines(dedent: Bool) {
+        let str       = string as NSString
+        let sel       = selectedRange()
+        let lineRange = str.lineRange(for: sel)
+        var lines     = str.substring(with: lineRange).components(separatedBy: "\n")
+        let hadTrailingNewline = str.substring(with: lineRange).hasSuffix("\n")
+        if hadTrailingNewline, lines.last == "" { lines.removeLast() }
+
+        let shifted = lines.map { line -> String in
+            guard !line.isEmpty else { return line }
+            if dedent {
+                if line.hasPrefix("\t")    { return String(line.dropFirst()) }
+                if line.hasPrefix("    ")  { return String(line.dropFirst(4)) }
+                if line.hasPrefix("   ")   { return String(line.dropFirst(3)) }
+                if line.hasPrefix("  ")    { return String(line.dropFirst(2)) }
+                if line.hasPrefix(" ")     { return String(line.dropFirst(1)) }
+                return line
+            } else {
+                return "\t" + line
+            }
+        }
+        var result = shifted.joined(separator: "\n")
+        if hadTrailingNewline { result += "\n" }
+
+        if shouldChangeText(in: lineRange, replacementString: result) {
+            textStorage?.replaceCharacters(in: lineRange,
+                with: NSAttributedString(string: result, attributes: typingAttributes))
+            didChangeText()
+        }
+        setSelectedRange(NSRange(location: lineRange.location, length: (result as NSString).length))
+    }
+
     override func insertNewline(_ sender: Any?) {
         super.insertNewline(sender)
         // Replicate leading whitespace of the previous line
