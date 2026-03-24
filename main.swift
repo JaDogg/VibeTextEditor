@@ -456,10 +456,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories    = false
-        if #available(macOS 12.0, *) {
-            panel.allowedContentTypes = [.plainText, .text, .commaSeparatedText,
-                                         .tabSeparatedText, .delimitedText]
-        }
         if panel.runModal() == .OK, let url = panel.url {
             openFile(url: url)
         }
