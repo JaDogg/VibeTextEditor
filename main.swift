@@ -296,7 +296,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     var currentFontSize   = kDefaultFontSize
     var currentThemeIndex = 0
     var wordWrapEnabled   = true
-    var pendingOpenURL: URL?
+    var pendingOpenURL:   URL?
+    weak var recentFilesMenu: NSMenu?
 
     // MARK: - App Lifecycle
 
@@ -533,6 +534,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         fileItem.submenu = fileMenu
         fileMenu.addItem(NSMenuItem(title: "New",   action: #selector(newDocument),  keyEquivalent: "n"))
         fileMenu.addItem(NSMenuItem(title: "Open…", action: #selector(openDocument), keyEquivalent: "o"))
+        let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
+        let recentMenu = NSMenu(title: "Open Recent")
+        recentItem.submenu = recentMenu
+        recentFilesMenu    = recentMenu
+        fileMenu.addItem(recentItem)
+        rebuildRecentFilesMenu()
         fileMenu.addItem(.separator())
         fileMenu.addItem(NSMenuItem(title: "Save",  action: #selector(saveDocument), keyEquivalent: "s"))
         let saveAs = NSMenuItem(title: "Save As…", action: #selector(saveDocumentAs), keyEquivalent: "s")
@@ -597,6 +604,56 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         NSApp.windowsMenu = winMenu
     }
 
+    // MARK: - Recent Files
+
+    private let kRecentFilesKey = "VTERecentFiles"
+    private let kMaxRecentFiles = 10
+
+    func addToRecents(_ url: URL) {
+        var paths = UserDefaults.standard.stringArray(forKey: kRecentFilesKey) ?? []
+        paths.removeAll { $0 == url.path }
+        paths.insert(url.path, at: 0)
+        if paths.count > kMaxRecentFiles { paths = Array(paths.prefix(kMaxRecentFiles)) }
+        UserDefaults.standard.set(paths, forKey: kRecentFilesKey)
+        rebuildRecentFilesMenu()
+    }
+
+    func rebuildRecentFilesMenu() {
+        guard let menu = recentFilesMenu else { return }
+        menu.removeAllItems()
+        let paths = UserDefaults.standard.stringArray(forKey: kRecentFilesKey) ?? []
+        if paths.isEmpty {
+            let empty = NSMenuItem(title: "No Recent Files", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+        } else {
+            for path in paths {
+                let url  = URL(fileURLWithPath: path)
+                let item = NSMenuItem(title: url.lastPathComponent,
+                                      action: #selector(openRecentFile(_:)),
+                                      keyEquivalent: "")
+                item.toolTip          = path
+                item.representedObject = url
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
+            menu.addItem(NSMenuItem(title: "Clear Menu",
+                                    action: #selector(clearRecentFiles),
+                                    keyEquivalent: ""))
+        }
+    }
+
+    @objc func openRecentFile(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        guard confirmDiscardChanges(reason: "opening another file") else { return }
+        openFile(url: url)
+    }
+
+    @objc func clearRecentFiles() {
+        UserDefaults.standard.removeObject(forKey: kRecentFilesKey)
+        rebuildRecentFilesMenu()
+    }
+
     // MARK: - File Operations
 
     @objc func newDocument() {
@@ -641,6 +698,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
             textView.scrollToBeginningOfDocument(nil)
             rulerView.refresh()
             updateStatusBar()
+            addToRecents(url)
         } catch {
             let alert = NSAlert(error: error); alert.runModal()
         }
