@@ -34,11 +34,43 @@ extension Comparable {
     }
 }
 
-// MARK: - Dark Mode Helper
+// MARK: - Theme
 
-func isDarkMode() -> Bool {
-    NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+struct Theme {
+    let name: String
+    let background: NSColor
+    let foreground: NSColor
 }
+
+extension NSColor {
+    convenience init(rgb hex: UInt32) {
+        self.init(red:   CGFloat((hex >> 16) & 0xFF) / 255,
+                  green: CGFloat((hex >>  8) & 0xFF) / 255,
+                  blue:  CGFloat( hex        & 0xFF) / 255,
+                  alpha: 1)
+    }
+    var relativeLuminance: CGFloat {
+        guard let c = usingColorSpace(.deviceRGB) else { return 0.5 }
+        return 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+    }
+}
+
+let kThemeIndexKey = "VTEThemeIndex"
+
+let kThemes: [Theme] = [
+    // ── Light ─────────────────────────────────────────────────────────────────
+    Theme(name: "Default Light",   background: .white,                    foreground: NSColor(rgb: 0x1C1C1C)),
+    Theme(name: "Solarized Light", background: NSColor(rgb: 0xFDF6E3),    foreground: NSColor(rgb: 0x657B83)),
+    Theme(name: "GitHub",          background: NSColor(rgb: 0xFFFFFF),    foreground: NSColor(rgb: 0x24292E)),
+    Theme(name: "Paper",           background: NSColor(rgb: 0xF5F0E8),    foreground: NSColor(rgb: 0x3B3B3B)),
+    Theme(name: "Quiet Light",     background: NSColor(rgb: 0xF8F8F8),    foreground: NSColor(rgb: 0x333333)),
+    // ── Dark ──────────────────────────────────────────────────────────────────
+    Theme(name: "Default Dark",    background: NSColor(rgb: 0x1E1E1E),    foreground: NSColor(rgb: 0xD4D4D4)),
+    Theme(name: "Solarized Dark",  background: NSColor(rgb: 0x002B36),    foreground: NSColor(rgb: 0x839496)),
+    Theme(name: "Monokai",         background: NSColor(rgb: 0x272822),    foreground: NSColor(rgb: 0xF8F8F2)),
+    Theme(name: "One Dark",        background: NSColor(rgb: 0x282C34),    foreground: NSColor(rgb: 0xABB2BF)),
+    Theme(name: "Tokyo Night",     background: NSColor(rgb: 0x1A1B2E),    foreground: NSColor(rgb: 0xA9B1D6)),
+]
 
 // MARK: - Line Number Ruler View
 
@@ -50,6 +82,11 @@ class LineNumberRulerView: NSView {
     private var observations: [Any] = []
     private static let sidePad: CGFloat = 8.0
     private var cachedLineCount: Int = 1
+
+    // Set by AppDelegate whenever the theme changes
+    var rulerBg:     NSColor = NSColor(white: 0.94, alpha: 1)
+    var rulerBorder: NSColor = NSColor(white: 0.76, alpha: 1)
+    var rulerFg:     NSColor = NSColor(white: 0.55, alpha: 1)
 
     static let width: CGFloat = 50
 
@@ -91,20 +128,18 @@ class LineNumberRulerView: NSView {
               let lm = tv.layoutManager,
               let sv = attachedScrollView else { return }
 
-        let dark = isDarkMode()
-
         // Background
-        (dark ? NSColor(white: 0.14, alpha: 1) : NSColor(white: 0.94, alpha: 1)).setFill()
+        rulerBg.setFill()
         dirtyRect.fill()
 
         // Right border
-        (dark ? NSColor(white: 0.28, alpha: 1) : NSColor(white: 0.76, alpha: 1)).setFill()
+        rulerBorder.setFill()
         NSRect(x: bounds.width - 1, y: dirtyRect.minY, width: 1, height: dirtyRect.height).fill()
 
         guard lm.numberOfGlyphs > 0 else { return }
 
         let font    = rulerFont()
-        let fgColor = dark ? NSColor(white: 0.42, alpha: 1) : NSColor(white: 0.55, alpha: 1)
+        let fgColor = rulerFg
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: fgColor]
 
         let nsStr    = tv.string as NSString
@@ -210,14 +245,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     var isModified     = false
     var autoSaveTimer: Timer?
 
-    var currentFontName = kDefaultFontName
-    var currentFontSize = kDefaultFontSize
+    var currentFontName  = kDefaultFontName
+    var currentFontSize  = kDefaultFontSize
+    var currentThemeIndex = 0
     var pendingOpenURL: URL?
 
     // MARK: - App Lifecycle
 
     func applicationDidFinishLaunching(_ n: Notification) {
         loadFontPrefs()
+        loadThemePrefs()
         buildWindow()
         buildMenu()
         if let url = pendingOpenURL {
@@ -248,6 +285,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     func persistFontPrefs() {
         UserDefaults.standard.set(currentFontName, forKey: kFontNameKey)
         UserDefaults.standard.set(currentFontSize, forKey: kFontSizeKey)
+    }
+
+    // MARK: - Theme Prefs
+
+    func loadThemePrefs() {
+        let saved = UserDefaults.standard.integer(forKey: kThemeIndexKey)
+        currentThemeIndex = saved.clamped(to: 0...(kThemes.count - 1))
+    }
+
+    func persistThemePrefs() {
+        UserDefaults.standard.set(currentThemeIndex, forKey: kThemeIndexKey)
+    }
+
+    @objc func selectTheme(_ sender: NSMenuItem) {
+        currentThemeIndex = sender.tag
+        persistThemePrefs()
+        applyTheme()
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(selectTheme(_:)) {
+            menuItem.state = menuItem.tag == currentThemeIndex ? .on : .off
+        }
+        return true
     }
 
     func currentFont() -> NSFont {
@@ -353,27 +414,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     }
 
     func applyTheme() {
-        // Semantic colors adapt automatically to light/dark mode.
-        let bgColor: NSColor = .textBackgroundColor
-        let fgColor: NSColor = .textColor
+        let theme = kThemes[currentThemeIndex]
+        let bg = theme.background
+        let fg = theme.foreground
 
-        textView.backgroundColor = bgColor
-        textView.textColor       = fgColor
-        textView.insertionPointColor = fgColor
+        textView.backgroundColor     = bg
+        textView.textColor           = fg
+        textView.insertionPointColor = fg
 
-        // The clip view (NSClipView) is what shows when the document doesn't fill
-        // the scroll view — set it explicitly so there is no gray bleed-through.
-        scrollView.backgroundColor            = bgColor
-        scrollView.contentView.backgroundColor = bgColor
+        scrollView.backgroundColor             = bg
+        scrollView.contentView.backgroundColor = bg
         scrollView.contentView.drawsBackground = true
 
-        window.backgroundColor = bgColor
+        window.backgroundColor = bg
 
-        // Keep typing attributes consistent so newly typed characters are visible.
         var ta = textView.typingAttributes
-        ta[.foregroundColor] = fgColor
+        ta[.foregroundColor] = fg
         ta[.font] = currentFont()
         textView.typingAttributes = ta
+
+        // Derive ruler colors by blending theme bg toward white/black
+        let dark  = bg.relativeLuminance < 0.4
+        let blend = NSColor(white: dark ? 1 : 0, alpha: 1)
+        rulerView.rulerBg     = bg.blended(withFraction: 0.08,  of: blend) ?? bg
+        rulerView.rulerBorder = bg.blended(withFraction: 0.20,  of: blend) ?? bg
+        rulerView.rulerFg     = fg.withAlphaComponent(0.5)
+        rulerView.needsDisplay = true
 
         applyFontToStorage()
     }
@@ -439,6 +505,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         let reset = NSMenuItem(title: "Default Size", action: #selector(fontResetSize), keyEquivalent: "0")
         reset.keyEquivalentModifierMask = .command
         fmtMenu.addItem(reset)
+        fmtMenu.addItem(.separator())
+        let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
+        let themeMenu = NSMenu(title: "Theme")
+        for (i, theme) in kThemes.enumerated() {
+            if i == 5 { themeMenu.addItem(.separator()) }   // divider between light and dark
+            let item = NSMenuItem(title: theme.name, action: #selector(selectTheme(_:)), keyEquivalent: "")
+            item.tag = i
+            themeMenu.addItem(item)
+        }
+        themeItem.submenu = themeMenu
+        fmtMenu.addItem(themeItem)
 
         // ── Window ────────────────────────────────────────────────────────────
         let winItem = NSMenuItem(); bar.addItem(winItem)
@@ -591,7 +668,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     /// Needed after programmatic string assignment, which can reset attributes.
     private func applyFontToStorage() {
         guard let storage = textView.textStorage, storage.length > 0 else { return }
-        storage.addAttributes([.font: currentFont(), .foregroundColor: NSColor.textColor],
+        storage.addAttributes([.font: currentFont(), .foregroundColor: kThemes[currentThemeIndex].foreground],
                                range: NSRange(location: 0, length: storage.length))
     }
 
