@@ -166,6 +166,24 @@ class EditorTextView: NSTextView {
     /// Called when the user Cmd+scrolls to change font size
     var onFontSizeChange: ((CGFloat) -> Void)?
 
+    // NSTextView's default sizeToFit adds only one textContainerInset.height
+    // (for the top), leaving the bottom inset unaccounted for and clipping the
+    // last line. It also omits the extraLineFragmentRect (the cursor line after
+    // a trailing newline). Both are corrected here.
+    override func sizeToFit() {
+        guard let lm = layoutManager, let tc = textContainer else {
+            super.sizeToFit()
+            return
+        }
+        lm.ensureLayout(for: tc)
+        var bottomY = lm.usedRect(for: tc).maxY
+        let extra = lm.extraLineFragmentRect
+        if extra != .zero { bottomY = max(bottomY, extra.maxY) }
+        let insetH = textContainerInset.height
+        setFrameSize(NSSize(width: frame.width,
+                            height: max(minSize.height, ceil(bottomY + insetH * 2))))
+    }
+
     override func scrollWheel(with event: NSEvent) {
         guard event.modifierFlags.contains(.command) else {
             super.scrollWheel(with: event)
