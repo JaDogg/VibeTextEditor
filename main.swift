@@ -265,6 +265,26 @@ class EditorTextView: NSTextView {
                             height: max(minSize.height, ceil(bottomY + insetH * 2))))
     }
 
+    override func insertNewline(_ sender: Any?) {
+        super.insertNewline(sender)
+        // Replicate leading whitespace of the previous line
+        let str    = string as NSString
+        let cursor = selectedRange().location
+        // Find the start of the PREVIOUS line (the one we just left)
+        guard cursor > 0 else { return }
+        let prevLineRange = str.lineRange(for: NSRange(location: cursor - 1, length: 0))
+        var indent = ""
+        var i = prevLineRange.location
+        while i < prevLineRange.location + prevLineRange.length {
+            let c = str.character(at: i)
+            if c == 32 || c == 9 { indent.append(Character(UnicodeScalar(c)!)); i += 1 }
+            else { break }
+        }
+        if !indent.isEmpty {
+            insertText(indent, replacementRange: selectedRange())
+        }
+    }
+
     override func scrollWheel(with event: NSEvent) {
         guard event.modifierFlags.contains(.command) else {
             super.scrollWheel(with: event)
