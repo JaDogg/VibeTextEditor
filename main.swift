@@ -548,6 +548,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenu.addItem(.separator())
         editMenu.addItem(NSMenuItem(title: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f"))
+        let goToLine = NSMenuItem(title: "Go to Line…", action: #selector(goToLine), keyEquivalent: "l")
+        goToLine.keyEquivalentModifierMask = .command
+        editMenu.addItem(goToLine)
 
         // ── Format ────────────────────────────────────────────────────────────
         let fmtItem = NSMenuItem(); bar.addItem(fmtItem)
@@ -677,6 +680,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
             guard let self, self.isModified, let url = self.currentFileURL else { return }
             _ = self.write(to: url)
         }
+    }
+
+    // MARK: - Go to Line
+
+    @objc func goToLine() {
+        let alert = NSAlert()
+        alert.messageText = "Go to Line"
+        alert.addButton(withTitle: "Go")
+        alert.addButton(withTitle: "Cancel")
+        let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 120, height: 22))
+        tf.placeholderString = "Line number"
+        alert.accessoryView = tf
+        alert.window.initialFirstResponder = tf
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let input = tf.stringValue.trimmingCharacters(in: .whitespaces)
+        guard let lineNum = Int(input), lineNum > 0 else { return }
+
+        let lines  = textView.string.components(separatedBy: "\n")
+        let target = min(lineNum, lines.count) - 1
+        var offset = 0
+        for i in 0..<target { offset += lines[i].utf16.count + 1 }
+        let len   = lines[target].utf16.count
+        let range = NSRange(location: offset, length: len)
+        textView.scrollRangeToVisible(range)
+        textView.setSelectedRange(range)
+        textView.window?.makeFirstResponder(textView)
     }
 
     // MARK: - NSTextDelegate / NSTextViewDelegate
