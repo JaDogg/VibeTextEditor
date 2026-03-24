@@ -292,9 +292,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     var isModified     = false
     var autoSaveTimer: Timer?
 
-    var currentFontName  = kDefaultFontName
-    var currentFontSize  = kDefaultFontSize
+    var currentFontName   = kDefaultFontName
+    var currentFontSize   = kDefaultFontSize
     var currentThemeIndex = 0
+    var wordWrapEnabled   = true
     var pendingOpenURL: URL?
 
     // MARK: - App Lifecycle
@@ -302,6 +303,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     func applicationDidFinishLaunching(_ n: Notification) {
         loadFontPrefs()
         loadThemePrefs()
+        wordWrapEnabled = UserDefaults.standard.object(forKey: "VTEWordWrap") as? Bool ?? true
         buildWindow()
         buildMenu()
         if let url = pendingOpenURL {
@@ -354,6 +356,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(selectTheme(_:)) {
             menuItem.state = menuItem.tag == currentThemeIndex ? .on : .off
+        }
+        if menuItem.action == #selector(toggleWordWrap) {
+            menuItem.state = wordWrapEnabled ? .on : .off
         }
         return true
     }
@@ -449,6 +454,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         container.addSubview(scrollView)
 
         applyTheme()
+        applyWordWrap()
 
         window.contentView = container
         window.makeKeyAndOrderFront(nil)
@@ -568,6 +574,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         reset.keyEquivalentModifierMask = .command
         fmtMenu.addItem(reset)
         fmtMenu.addItem(.separator())
+        let wrapItem = NSMenuItem(title: "Word Wrap", action: #selector(toggleWordWrap), keyEquivalent: "")
+        fmtMenu.addItem(wrapItem)
+        fmtMenu.addItem(.separator())
         let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
         let themeMenu = NSMenu(title: "Theme")
         for (i, theme) in kThemes.enumerated() {
@@ -680,6 +689,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
             guard let self, self.isModified, let url = self.currentFileURL else { return }
             _ = self.write(to: url)
         }
+    }
+
+    // MARK: - Word Wrap
+
+    @objc func toggleWordWrap() {
+        wordWrapEnabled.toggle()
+        UserDefaults.standard.set(wordWrapEnabled, forKey: "VTEWordWrap")
+        applyWordWrap()
+    }
+
+    func applyWordWrap() {
+        let width = wordWrapEnabled ? scrollView.contentSize.width : CGFloat.greatestFiniteMagnitude
+        textView.isHorizontallyResizable            = !wordWrapEnabled
+        textView.textContainer?.widthTracksTextView = wordWrapEnabled
+        textView.textContainer?.containerSize       = NSSize(width: width, height: .greatestFiniteMagnitude)
+        scrollView.hasHorizontalScroller            = !wordWrapEnabled
     }
 
     // MARK: - Go to Line
