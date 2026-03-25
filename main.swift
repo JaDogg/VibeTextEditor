@@ -661,8 +661,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         let editItem = NSMenuItem(); bar.addItem(editItem)
         let editMenu = NSMenu(title: "Edit")
         editItem.submenu = editMenu
-        editMenu.addItem(NSMenuItem(title: "Undo", action: #selector(UndoManager.undo), keyEquivalent: "z"))
-        let redo = NSMenuItem(title: "Redo", action: #selector(UndoManager.redo), keyEquivalent: "z")
+        // Selector("undo:") / Selector("redo:") use the standard Cocoa action selectors
+        // that NSTextView (with allowsUndo = true) handles through the responder chain.
+        // #selector(UndoManager.undo) produces `undo` (no colon) which is a no-arg method
+        // and never matches the action dispatch, so undo never fires.
+        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
+        let redo = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(redo)
         editMenu.addItem(.separator())
