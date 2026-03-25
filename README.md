@@ -29,6 +29,9 @@ A minimal, distraction-free plain text editor for macOS. Single Swift source fil
 | Save | Cmd+S |
 | Save As | Cmd+Shift+S |
 | Find | Cmd+F |
+| Find and Replace | Cmd+H |
+| Find Next | Cmd+G |
+| Find Previous | Cmd+Shift+G |
 | Go to Line | Cmd+L |
 | Duplicate Line | Cmd+D |
 | Indent | Tab (with selection) |

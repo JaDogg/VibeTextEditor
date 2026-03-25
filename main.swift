@@ -675,7 +675,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         editMenu.addItem(NSMenuItem(title: "Paste",      action: #selector(NSText.paste(_:)),     keyEquivalent: "v"))
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenu.addItem(.separator())
-        editMenu.addItem(NSMenuItem(title: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f"))
+        // NSTextFinder actions (usesFindBar = true uses inline find bar).
+        // performFindPanelAction tag 0 is a no-op; performTextFinderAction with
+        // explicit Action tags drives the inline bar correctly.
+        let find = NSMenuItem(title: "Find…",
+                              action: #selector(NSTextView.performTextFinderAction(_:)),
+                              keyEquivalent: "f")
+        find.tag = NSTextFinder.Action.showFindInterface.rawValue
+        editMenu.addItem(find)
+
+        let findReplace = NSMenuItem(title: "Find and Replace…",
+                                     action: #selector(NSTextView.performTextFinderAction(_:)),
+                                     keyEquivalent: "h")
+        findReplace.keyEquivalentModifierMask = .command
+        findReplace.tag = NSTextFinder.Action.showReplaceInterface.rawValue
+        editMenu.addItem(findReplace)
+
+        let findNext = NSMenuItem(title: "Find Next",
+                                  action: #selector(NSTextView.performTextFinderAction(_:)),
+                                  keyEquivalent: "g")
+        findNext.tag = NSTextFinder.Action.nextMatch.rawValue
+        editMenu.addItem(findNext)
+
+        let findPrev = NSMenuItem(title: "Find Previous",
+                                  action: #selector(NSTextView.performTextFinderAction(_:)),
+                                  keyEquivalent: "g")
+        findPrev.keyEquivalentModifierMask = [.command, .shift]
+        findPrev.tag = NSTextFinder.Action.previousMatch.rawValue
+        editMenu.addItem(findPrev)
         editMenu.addItem(.separator())
         editMenu.addItem(NSMenuItem(title: "Smart Typing", action: #selector(toggleSmartTyping), keyEquivalent: ""))
         editMenu.addItem(.separator())
