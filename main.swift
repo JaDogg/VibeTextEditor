@@ -396,7 +396,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         wordWrapEnabled  = UserDefaults.standard.object(forKey: "VTEWordWrap") as? Bool ?? true
         statusBarVisible = UserDefaults.standard.object(forKey: kStatusBarVisibleKey) as? Bool ?? true
         columnGuidesOn   = UserDefaults.standard.object(forKey: kColumnGuidesKey) as? Bool ?? true
-        smartTypingOn    = UserDefaults.standard.object(forKey: kSmartTypingKey)  as? Bool ?? false
+        smartTypingOn    = false   // always start with smart typing off
         buildWindow()
         buildMenu()
         applyStatusBarVisibility()
@@ -923,7 +923,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
 
     @objc func toggleSmartTyping() {
         smartTypingOn.toggle()
-        UserDefaults.standard.set(smartTypingOn, forKey: kSmartTypingKey)
         applySmartTyping()
     }
 
