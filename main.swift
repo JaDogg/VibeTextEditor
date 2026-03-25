@@ -928,6 +928,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         textView.isAutomaticTextReplacementEnabled    = on
         textView.isContinuousSpellCheckingEnabled     = on
         textView.isGrammarCheckingEnabled             = on
+        textView.smartInsertDeleteEnabled             = on
     }
 
     // MARK: - Go to Line
