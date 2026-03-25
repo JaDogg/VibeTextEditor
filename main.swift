@@ -55,7 +55,8 @@ extension NSColor {
     }
 }
 
-let kThemeIndexKey = "VTEThemeIndex"
+let kThemeIndexKey      = "VTEThemeIndex"
+let kStatusBarVisibleKey = "VTEStatusBarVisible"
 
 let kThemes: [Theme] = [
     // ── Light ─────────────────────────────────────────────────────────────────
@@ -363,6 +364,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     var currentFontSize   = kDefaultFontSize
     var currentThemeIndex = 0
     var wordWrapEnabled   = true
+    var statusBarVisible  = true
     var pendingOpenURL:   URL?
     weak var recentFilesMenu: NSMenu?
 
@@ -371,9 +373,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     func applicationDidFinishLaunching(_ n: Notification) {
         loadFontPrefs()
         loadThemePrefs()
-        wordWrapEnabled = UserDefaults.standard.object(forKey: "VTEWordWrap") as? Bool ?? true
+        wordWrapEnabled  = UserDefaults.standard.object(forKey: "VTEWordWrap") as? Bool ?? true
+        statusBarVisible = UserDefaults.standard.object(forKey: kStatusBarVisibleKey) as? Bool ?? true
         buildWindow()
         buildMenu()
+        applyStatusBarVisibility()
+        updateStatusBar()
         if let url = pendingOpenURL {
             pendingOpenURL = nil
             openFile(url: url)
@@ -427,6 +432,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         }
         if menuItem.action == #selector(toggleWordWrap) {
             menuItem.state = wordWrapEnabled ? .on : .off
+        }
+        if menuItem.action == #selector(toggleStatusBar) {
+            menuItem.state = statusBarVisible ? .on : .off
         }
         return true
     }
@@ -612,6 +620,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         let saveAs = NSMenuItem(title: "Save As…", action: #selector(saveDocumentAs), keyEquivalent: "s")
         saveAs.keyEquivalentModifierMask = [.command, .shift]
         fileMenu.addItem(saveAs)
+
+        // ── View ──────────────────────────────────────────────────────────────
+        let viewItem = NSMenuItem(); bar.addItem(viewItem)
+        let viewMenu = NSMenu(title: "View")
+        viewItem.submenu = viewMenu
+        viewMenu.addItem(NSMenuItem(title: "Status Bar", action: #selector(toggleStatusBar), keyEquivalent: ""))
 
         // ── Edit ──────────────────────────────────────────────────────────────
         let editItem = NSMenuItem(); bar.addItem(editItem)
@@ -859,6 +873,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         textView.textContainer?.widthTracksTextView = wordWrapEnabled
         textView.textContainer?.containerSize       = NSSize(width: width, height: .greatestFiniteMagnitude)
         scrollView.hasHorizontalScroller            = !wordWrapEnabled
+    }
+
+    // MARK: - Status Bar
+
+    @objc func toggleStatusBar() {
+        statusBarVisible.toggle()
+        UserDefaults.standard.set(statusBarVisible, forKey: kStatusBarVisibleKey)
+        applyStatusBarVisibility()
+        if statusBarVisible { updateStatusBar() }
+    }
+
+    func applyStatusBarVisibility() {
+        statusBarView.isHidden = !statusBarVisible
+        guard let cv = window?.contentView else { return }
+        let rw        = LineNumberRulerView.width
+        let barHeight: CGFloat = statusBarVisible ? kStatusBarHeight : 0
+        rulerView.frame  = NSRect(x: 0,  y: barHeight,
+                                  width: rw,
+                                  height: cv.bounds.height - barHeight)
+        scrollView.frame = NSRect(x: rw, y: barHeight,
+                                  width: cv.bounds.width - rw,
+                                  height: cv.bounds.height - barHeight)
     }
 
     // MARK: - Go to Line
