@@ -602,7 +602,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
 
         statusBarView.bgColor     = rulerView.rulerBg
         statusBarView.borderColor = rulerView.rulerBorder
-        statusBarView.fgColor     = rulerView.rulerFg
+        // Resolve to a solid color — NSTextField doesn't composite semi-transparent
+        // textColor correctly against a manually-drawn background.
+        statusBarView.fgColor = fg.blended(withFraction: 0.5, of: rulerView.rulerBg) ?? fg
         statusBarView.needsDisplay = true
 
         textView.columnGuideColor  = rulerView.rulerBorder.withAlphaComponent(0.6)
