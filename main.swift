@@ -56,7 +56,9 @@ extension NSColor {
 }
 
 let kThemeIndexKey      = "VTEThemeIndex"
-let kStatusBarVisibleKey = "VTEStatusBarVisible"
+let kStatusBarVisibleKey  = "VTEStatusBarVisible"
+let kColumnGuidesKey      = "VTEColumnGuides"
+let kSmartTypingKey       = "VTESmartTyping"
 
 let kThemes: [Theme] = [
     // ── Light ─────────────────────────────────────────────────────────────────
@@ -248,6 +250,22 @@ class EditorTextView: NSTextView {
     /// Called when the user Cmd+scrolls to change font size
     var onFontSizeChange: ((CGFloat) -> Void)?
 
+    var showColumnGuides = true
+    var columnGuideColor: NSColor = NSColor(white: 0.5, alpha: 0.25)
+
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        guard showColumnGuides, let font = self.font else { return }
+        let charWidth = ("M" as NSString).size(withAttributes: [.font: font]).width
+        let originX   = textContainerOrigin.x
+        columnGuideColor.setFill()
+        for col in [80, 120] {
+            let x = (originX + charWidth * CGFloat(col)).rounded()
+            guard x >= rect.minX - 1 && x <= rect.maxX + 1 else { continue }
+            NSRect(x: x, y: rect.minY, width: 1, height: rect.height).fill()
+        }
+    }
+
     // NSTextView's default sizeToFit adds only one textContainerInset.height
     // (for the top), leaving the bottom inset unaccounted for and clipping the
     // last line. It also omits the extraLineFragmentRect (the cursor line after
@@ -365,6 +383,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     var currentThemeIndex = 0
     var wordWrapEnabled   = true
     var statusBarVisible  = true
+    var columnGuidesOn    = true
+    var smartTypingOn     = false
     var pendingOpenURL:   URL?
     weak var recentFilesMenu: NSMenu?
 
@@ -375,6 +395,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         loadThemePrefs()
         wordWrapEnabled  = UserDefaults.standard.object(forKey: "VTEWordWrap") as? Bool ?? true
         statusBarVisible = UserDefaults.standard.object(forKey: kStatusBarVisibleKey) as? Bool ?? true
+        columnGuidesOn   = UserDefaults.standard.object(forKey: kColumnGuidesKey) as? Bool ?? true
+        smartTypingOn    = UserDefaults.standard.object(forKey: kSmartTypingKey)  as? Bool ?? false
         buildWindow()
         buildMenu()
         applyStatusBarVisibility()
@@ -436,6 +458,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         if menuItem.action == #selector(toggleStatusBar) {
             menuItem.state = statusBarVisible ? .on : .off
         }
+        if menuItem.action == #selector(toggleColumnGuides) {
+            menuItem.state = columnGuidesOn ? .on : .off
+        }
+        if menuItem.action == #selector(toggleSmartTyping) {
+            menuItem.state = smartTypingOn ? .on : .off
+        }
         return true
     }
 
@@ -484,12 +512,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         textView.allowsUndo   = true
         textView.isRichText   = false
 
-        textView.isAutomaticQuoteSubstitutionEnabled  = false
-        textView.isAutomaticDashSubstitutionEnabled   = false
-        textView.isAutomaticSpellingCorrectionEnabled = false
-        textView.isAutomaticTextReplacementEnabled    = false
-        textView.isContinuousSpellCheckingEnabled     = false
-        textView.isGrammarCheckingEnabled             = false
+        applySmartTyping()
 
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable   = true
@@ -582,6 +605,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         statusBarView.fgColor     = rulerView.rulerFg
         statusBarView.needsDisplay = true
 
+        textView.columnGuideColor  = rulerView.rulerBorder.withAlphaComponent(0.6)
+        textView.showColumnGuides  = columnGuidesOn
+        textView.needsDisplay      = true
+
         applyFontToStorage()
     }
 
@@ -625,7 +652,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         let viewItem = NSMenuItem(); bar.addItem(viewItem)
         let viewMenu = NSMenu(title: "View")
         viewItem.submenu = viewMenu
-        viewMenu.addItem(NSMenuItem(title: "Status Bar", action: #selector(toggleStatusBar), keyEquivalent: ""))
+        viewMenu.addItem(NSMenuItem(title: "Status Bar",    action: #selector(toggleStatusBar),    keyEquivalent: ""))
+        viewMenu.addItem(NSMenuItem(title: "Column Guides", action: #selector(toggleColumnGuides), keyEquivalent: ""))
 
         // ── Edit ──────────────────────────────────────────────────────────────
         let editItem = NSMenuItem(); bar.addItem(editItem)
@@ -642,6 +670,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenu.addItem(.separator())
         editMenu.addItem(NSMenuItem(title: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f"))
+        editMenu.addItem(.separator())
+        editMenu.addItem(NSMenuItem(title: "Smart Typing", action: #selector(toggleSmartTyping), keyEquivalent: ""))
         editMenu.addItem(.separator())
         let dupLine = NSMenuItem(title: "Duplicate Line", action: #selector(duplicateLine), keyEquivalent: "d")
         dupLine.keyEquivalentModifierMask = .command
@@ -882,6 +912,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         UserDefaults.standard.set(statusBarVisible, forKey: kStatusBarVisibleKey)
         applyStatusBarVisibility()
         if statusBarVisible { updateStatusBar() }
+    }
+
+    @objc func toggleColumnGuides() {
+        columnGuidesOn.toggle()
+        UserDefaults.standard.set(columnGuidesOn, forKey: kColumnGuidesKey)
+        textView.showColumnGuides = columnGuidesOn
+        textView.needsDisplay     = true
+    }
+
+    @objc func toggleSmartTyping() {
+        smartTypingOn.toggle()
+        UserDefaults.standard.set(smartTypingOn, forKey: kSmartTypingKey)
+        applySmartTyping()
+    }
+
+    func applySmartTyping() {
+        let on = smartTypingOn
+        textView.isAutomaticQuoteSubstitutionEnabled  = on
+        textView.isAutomaticDashSubstitutionEnabled   = on
+        textView.isAutomaticSpellingCorrectionEnabled = on
+        textView.isAutomaticTextReplacementEnabled    = on
+        textView.isContinuousSpellCheckingEnabled     = on
+        textView.isGrammarCheckingEnabled             = on
     }
 
     func applyStatusBarVisibility() {
