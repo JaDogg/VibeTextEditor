@@ -219,6 +219,27 @@ class EditorTextView: NSTextView {
         }
     }
 
+    // Copy/cut the whole current line when nothing is selected (like VS Code / Vim)
+    override func copy(_ sender: Any?) {
+        if selectedRange().length > 0 { super.copy(sender); return }
+        let line = (string as NSString).substring(with: (string as NSString).lineRange(for: selectedRange()))
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(line, forType: .string)
+    }
+
+    override func cut(_ sender: Any?) {
+        if selectedRange().length > 0 { super.cut(sender); return }
+        let str       = string as NSString
+        let lineRange = str.lineRange(for: selectedRange())
+        let line      = str.substring(with: lineRange)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(line, forType: .string)
+        if shouldChangeText(in: lineRange, replacementString: "") {
+            textStorage?.replaceCharacters(in: lineRange, with: "")
+            didChangeText()
+        }
+    }
+
     // NSTextView's default sizeToFit adds only one textContainerInset.height
     // (for the top), leaving the bottom inset unaccounted for and clipping the
     // last line. It also omits the extraLineFragmentRect (the cursor line after
