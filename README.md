@@ -5,7 +5,6 @@ A minimal, distraction-free plain text editor for macOS. Single Swift source fil
 ## Features
 
 - Line numbers
-- Status bar with line/column position and word count (View → Status Bar to toggle)
 - Monospace font with persistent font/size preferences (Cmd+`+`/`-`/`0`, or Format menu)
 - Cmd+scroll to zoom font size
 - Auto-save (2 s after last edit, when a file is open)

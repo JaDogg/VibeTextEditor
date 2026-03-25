@@ -56,7 +56,6 @@ extension NSColor {
 }
 
 let kThemeIndexKey      = "VTEThemeIndex"
-let kStatusBarVisibleKey  = "VTEStatusBarVisible"
 let kColumnGuidesKey      = "VTEColumnGuides"
 let kSmartTypingKey       = "VTESmartTyping"
 
@@ -74,49 +73,6 @@ let kThemes: [Theme] = [
     Theme(name: "One Dark",        background: NSColor(rgb: 0x282C34),    foreground: NSColor(rgb: 0xABB2BF)),
     Theme(name: "Tokyo Night",     background: NSColor(rgb: 0x1A1B2E),    foreground: NSColor(rgb: 0xA9B1D6)),
 ]
-
-// MARK: - Status Bar
-
-let kStatusBarHeight: CGFloat = 22
-
-class StatusBarView: NSView {
-    var bgColor:     NSColor = NSColor(white: 0.95, alpha: 1) { didSet { needsDisplay = true } }
-    var borderColor: NSColor = NSColor(white: 0.76, alpha: 1) { didSet { needsDisplay = true } }
-    var fgColor:     NSColor = NSColor(white: 0.45, alpha: 1) { didSet { needsDisplay = true } }
-
-    private var posText   = "Line 1, Col 1"
-    private var statsText = ""
-
-    required init?(coder: NSCoder) { fatalError() }
-    override init(frame: NSRect) { super.init(frame: frame) }
-
-    func update(line: Int, col: Int, words: Int, chars: Int) {
-        posText   = "Line \(line), Col \(col)"
-        statsText = "\(words) words · \(chars) chars"
-        needsDisplay = true
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        // Background
-        bgColor.setFill()
-        bounds.fill()
-
-        // Top border
-        borderColor.setFill()
-        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
-
-        // Text — draw directly so colours always composite correctly
-        let font  = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: fgColor]
-        let posNS   = posText   as NSString
-        let statsNS = statsText as NSString
-        let posH    = posNS.size(withAttributes: attrs).height
-        let textY   = (bounds.height - posH) / 2
-        posNS.draw(at: NSPoint(x: 8, y: textY), withAttributes: attrs)
-        let statsW = statsNS.size(withAttributes: attrs).width
-        statsNS.draw(at: NSPoint(x: bounds.width - statsW - 8, y: textY), withAttributes: attrs)
-    }
-}
 
 // MARK: - Line Number Ruler View
 
@@ -363,13 +319,12 @@ class EditorTextView: NSTextView {
 
 // MARK: - App Delegate
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextViewDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextViewDelegate, NSMenuItemValidation {
 
     var window: NSWindow!
     var textView: EditorTextView!
     var scrollView: NSScrollView!
     var rulerView: LineNumberRulerView!
-    var statusBarView: StatusBarView!
 
     var currentFileURL: URL?
     var isModified     = false
@@ -379,25 +334,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
     var currentFontSize   = kDefaultFontSize
     var currentThemeIndex = 0
     var wordWrapEnabled   = true
-    var statusBarVisible  = true
     var columnGuidesOn    = true
     var smartTypingOn     = false
     var pendingOpenURL:   URL?
-    weak var recentFilesMenu: NSMenu?
+    weak var recentFilesMenu:      NSMenu?
+    // Direct refs for toggle items so state is always in sync
+    weak var wordWrapMenuItem:     NSMenuItem?
+    weak var columnGuidesMenuItem: NSMenuItem?
+    weak var smartTypingMenuItem:  NSMenuItem?
 
     // MARK: - App Lifecycle
 
     func applicationDidFinishLaunching(_ n: Notification) {
         loadFontPrefs()
         loadThemePrefs()
-        wordWrapEnabled  = UserDefaults.standard.object(forKey: "VTEWordWrap") as? Bool ?? true
-        statusBarVisible = UserDefaults.standard.object(forKey: kStatusBarVisibleKey) as? Bool ?? true
-        columnGuidesOn   = UserDefaults.standard.object(forKey: kColumnGuidesKey) as? Bool ?? true
-        smartTypingOn    = false   // always start with smart typing off
+        wordWrapEnabled = UserDefaults.standard.object(forKey: "VTEWordWrap") as? Bool ?? true
+        columnGuidesOn  = UserDefaults.standard.object(forKey: kColumnGuidesKey) as? Bool ?? true
+        smartTypingOn   = false   // always start with smart typing off
         buildWindow()
         buildMenu()
-        applyStatusBarVisibility()
-        updateStatusBar()
         if let url = pendingOpenURL {
             pendingOpenURL = nil
             openFile(url: url)
@@ -452,9 +407,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         if menuItem.action == #selector(toggleWordWrap) {
             menuItem.state = wordWrapEnabled ? .on : .off
         }
-        if menuItem.action == #selector(toggleStatusBar) {
-            menuItem.state = statusBarVisible ? .on : .off
-        }
         if menuItem.action == #selector(toggleColumnGuides) {
             menuItem.state = columnGuidesOn ? .on : .off
         }
@@ -487,9 +439,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         let rw = LineNumberRulerView.width
 
         // ── Scroll view (right of ruler) ──────────────────────────────────────
-        scrollView = NSScrollView(frame: NSRect(x: rw, y: kStatusBarHeight,
+        scrollView = NSScrollView(frame: NSRect(x: rw, y: 0,
                                                width: frame.width - rw,
-                                               height: frame.height - kStatusBarHeight))
+                                               height: frame.height))
         scrollView.borderType            = .noBorder
         scrollView.autoresizingMask      = [.width, .height]
         scrollView.hasVerticalScroller   = true
@@ -530,22 +482,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         scrollView.documentView = textView
 
         // ── Line number view (plain NSView, left strip) ───────────────────────
-        rulerView = LineNumberRulerView(frame: NSRect(x: 0, y: kStatusBarHeight,
+        rulerView = LineNumberRulerView(frame: NSRect(x: 0, y: 0,
                                                       width: rw,
-                                                      height: frame.height - kStatusBarHeight))
+                                                      height: frame.height))
         rulerView.autoresizingMask = [.height]
         rulerView.setup(with: textView, scrollView: scrollView)
 
-        // ── Status bar ────────────────────────────────────────────────────────
-        statusBarView = StatusBarView(frame: NSRect(x: 0, y: 0,
-                                                    width: frame.width,
-                                                    height: kStatusBarHeight))
-        statusBarView.autoresizingMask = [.width]
-
-        // ── Container holds ruler + scroll view + status bar ──────────────────
+        // ── Container holds ruler + scroll view ───────────────────────────────
         let container = NSView(frame: NSRect(origin: .zero, size: frame.size))
         container.autoresizingMask = [.width, .height]
-        container.addSubview(statusBarView)
         container.addSubview(rulerView)
         container.addSubview(scrollView)
 
@@ -597,15 +542,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         rulerView.rulerFg     = fg.withAlphaComponent(0.5)
         rulerView.needsDisplay = true
 
-        statusBarView.bgColor     = rulerView.rulerBg
-        statusBarView.borderColor = rulerView.rulerBorder
-        statusBarView.fgColor     = rulerView.rulerFg
-
         // Selection: bg blended 30% toward fg gives visible contrast on every theme
         let selBg = bg.blended(withFraction: 0.30, of: fg) ?? .selectedTextBackgroundColor
         textView.selectedTextAttributes = [.backgroundColor: selBg, .foregroundColor: fg]
-        statusBarView.needsDisplay = true
-
         textView.columnGuideColor  = rulerView.rulerBorder.withAlphaComponent(0.6)
         textView.showColumnGuides  = columnGuidesOn
         textView.needsDisplay      = true
@@ -653,8 +592,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         let viewItem = NSMenuItem(); bar.addItem(viewItem)
         let viewMenu = NSMenu(title: "View")
         viewItem.submenu = viewMenu
-        viewMenu.addItem(NSMenuItem(title: "Status Bar",    action: #selector(toggleStatusBar),    keyEquivalent: ""))
-        viewMenu.addItem(NSMenuItem(title: "Column Guides", action: #selector(toggleColumnGuides), keyEquivalent: ""))
+        let colGuideItem = NSMenuItem(title: "Column Guides", action: #selector(toggleColumnGuides), keyEquivalent: "")
+        colGuideItem.state = columnGuidesOn ? .on : .off
+        columnGuidesMenuItem = colGuideItem
+        viewMenu.addItem(colGuideItem)
 
         // ── Edit ──────────────────────────────────────────────────────────────
         let editItem = NSMenuItem(); bar.addItem(editItem)
@@ -703,7 +644,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         findPrev.tag = NSTextFinder.Action.previousMatch.rawValue
         editMenu.addItem(findPrev)
         editMenu.addItem(.separator())
-        editMenu.addItem(NSMenuItem(title: "Smart Typing", action: #selector(toggleSmartTyping), keyEquivalent: ""))
+        let smartItem = NSMenuItem(title: "Smart Typing", action: #selector(toggleSmartTyping), keyEquivalent: "")
+        smartItem.state = smartTypingOn ? .on : .off
+        smartTypingMenuItem = smartItem
+        editMenu.addItem(smartItem)
         editMenu.addItem(.separator())
         let dupLine = NSMenuItem(title: "Duplicate Line", action: #selector(duplicateLine), keyEquivalent: "d")
         dupLine.keyEquivalentModifierMask = .command
@@ -729,6 +673,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         fmtMenu.addItem(reset)
         fmtMenu.addItem(.separator())
         let wrapItem = NSMenuItem(title: "Word Wrap", action: #selector(toggleWordWrap), keyEquivalent: "")
+        wrapItem.state = wordWrapEnabled ? .on : .off
+        wordWrapMenuItem = wrapItem
         fmtMenu.addItem(wrapItem)
         fmtMenu.addItem(.separator())
         let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
@@ -844,7 +790,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
             window.title    = url.lastPathComponent
             textView.scrollToBeginningOfDocument(nil)
             rulerView.refresh()
-            updateStatusBar()
             addToRecents(url)
         } catch {
             let alert = NSAlert(error: error); alert.runModal()
@@ -925,6 +870,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
 
     @objc func toggleWordWrap() {
         wordWrapEnabled.toggle()
+        wordWrapMenuItem?.state = wordWrapEnabled ? .on : .off
         UserDefaults.standard.set(wordWrapEnabled, forKey: "VTEWordWrap")
         applyWordWrap()
     }
@@ -937,17 +883,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         scrollView.hasHorizontalScroller            = !wordWrapEnabled
     }
 
-    // MARK: - Status Bar
-
-    @objc func toggleStatusBar() {
-        statusBarVisible.toggle()
-        UserDefaults.standard.set(statusBarVisible, forKey: kStatusBarVisibleKey)
-        applyStatusBarVisibility()
-        if statusBarVisible { updateStatusBar() }
-    }
+    // MARK: - Column Guides / Smart Typing
 
     @objc func toggleColumnGuides() {
         columnGuidesOn.toggle()
+        columnGuidesMenuItem?.state = columnGuidesOn ? .on : .off
         UserDefaults.standard.set(columnGuidesOn, forKey: kColumnGuidesKey)
         textView.showColumnGuides = columnGuidesOn
         textView.needsDisplay     = true
@@ -955,6 +895,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
 
     @objc func toggleSmartTyping() {
         smartTypingOn.toggle()
+        smartTypingMenuItem?.state = smartTypingOn ? .on : .off
         applySmartTyping()
     }
 
@@ -966,19 +907,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         textView.isAutomaticTextReplacementEnabled    = on
         textView.isContinuousSpellCheckingEnabled     = on
         textView.isGrammarCheckingEnabled             = on
-    }
-
-    func applyStatusBarVisibility() {
-        statusBarView.isHidden = !statusBarVisible
-        guard let cv = window?.contentView else { return }
-        let rw        = LineNumberRulerView.width
-        let barHeight: CGFloat = statusBarVisible ? kStatusBarHeight : 0
-        rulerView.frame  = NSRect(x: 0,  y: barHeight,
-                                  width: rw,
-                                  height: cv.bounds.height - barHeight)
-        scrollView.frame = NSRect(x: rw, y: barHeight,
-                                  width: cv.bounds.width - rw,
-                                  height: cv.bounds.height - barHeight)
     }
 
     // MARK: - Go to Line
@@ -1013,24 +941,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         isModified = true
         window.isDocumentEdited = true
         rulerView.needsDisplay  = true
-        updateStatusBar()
         scheduleAutoSave()
-    }
-
-    func textViewDidChangeSelection(_ notification: Notification) {
-        updateStatusBar()
-    }
-
-    func updateStatusBar() {
-        let str = textView.string
-        let loc = textView.selectedRange().location
-        let prefix = (str as NSString).substring(to: min(loc, str.utf16.count))
-        let lines  = prefix.components(separatedBy: "\n")
-        let line   = lines.count
-        let col    = (lines.last?.count ?? 0) + 1
-        let words  = str.isEmpty ? 0 : str.components(separatedBy: .whitespacesAndNewlines)
-                                           .filter { !$0.isEmpty }.count
-        statusBarView.update(line: line, col: col, words: words, chars: str.count)
     }
 
     // MARK: - Font
