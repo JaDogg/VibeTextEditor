@@ -599,7 +599,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
 
         statusBarView.bgColor     = rulerView.rulerBg
         statusBarView.borderColor = rulerView.rulerBorder
-        statusBarView.fgColor = rulerView.rulerFg
+        statusBarView.fgColor     = rulerView.rulerFg
+
+        // Selection: bg blended 30% toward fg gives visible contrast on every theme
+        let selBg = bg.blended(withFraction: 0.30, of: fg) ?? .selectedTextBackgroundColor
+        textView.selectedTextAttributes = [.backgroundColor: selBg, .foregroundColor: fg]
         statusBarView.needsDisplay = true
 
         textView.columnGuideColor  = rulerView.rulerBorder.withAlphaComponent(0.6)
