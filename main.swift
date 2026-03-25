@@ -80,44 +80,41 @@ let kThemes: [Theme] = [
 let kStatusBarHeight: CGFloat = 22
 
 class StatusBarView: NSView {
-    private let posLabel   = NSTextField(labelWithString: "")
-    private let statsLabel = NSTextField(labelWithString: "")
-
     var bgColor:     NSColor = NSColor(white: 0.95, alpha: 1) { didSet { needsDisplay = true } }
     var borderColor: NSColor = NSColor(white: 0.76, alpha: 1) { didSet { needsDisplay = true } }
-    var fgColor:     NSColor = NSColor(white: 0.45, alpha: 1) { didSet {
-        posLabel.textColor   = fgColor
-        statsLabel.textColor = fgColor
-    }}
+    var fgColor:     NSColor = NSColor(white: 0.45, alpha: 1) { didSet { needsDisplay = true } }
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        for lbl in [posLabel, statsLabel] {
-            lbl.font            = font
-            lbl.isBezeled       = false
-            lbl.drawsBackground = false
-            lbl.isEditable      = false
-            lbl.isSelectable    = false
-            addSubview(lbl)
-        }
-        posLabel.frame   = NSRect(x: 8, y: 3, width: 200, height: 16)
-        statsLabel.frame = NSRect(x: frame.width - 208, y: 3, width: 200, height: 16)
-        statsLabel.alignment         = .right
-        statsLabel.autoresizingMask  = [.minXMargin]
-    }
+    private var posText   = "Line 1, Col 1"
+    private var statsText = ""
 
     required init?(coder: NSCoder) { fatalError() }
-
-    override func draw(_ dirtyRect: NSRect) {
-        bgColor.setFill(); dirtyRect.fill()
-        borderColor.setFill()
-        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
-    }
+    override init(frame: NSRect) { super.init(frame: frame) }
 
     func update(line: Int, col: Int, words: Int, chars: Int) {
-        posLabel.stringValue   = "Line \(line), Col \(col)"
-        statsLabel.stringValue = "\(words) words · \(chars) chars"
+        posText   = "Line \(line), Col \(col)"
+        statsText = "\(words) words · \(chars) chars"
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // Background
+        bgColor.setFill()
+        bounds.fill()
+
+        // Top border
+        borderColor.setFill()
+        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
+
+        // Text — draw directly so colours always composite correctly
+        let font  = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: fgColor]
+        let posNS   = posText   as NSString
+        let statsNS = statsText as NSString
+        let posH    = posNS.size(withAttributes: attrs).height
+        let textY   = (bounds.height - posH) / 2
+        posNS.draw(at: NSPoint(x: 8, y: textY), withAttributes: attrs)
+        let statsW = statsNS.size(withAttributes: attrs).width
+        statsNS.draw(at: NSPoint(x: bounds.width - statsW - 8, y: textY), withAttributes: attrs)
     }
 }
 
@@ -602,9 +599,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
 
         statusBarView.bgColor     = rulerView.rulerBg
         statusBarView.borderColor = rulerView.rulerBorder
-        // Resolve to a solid color — NSTextField doesn't composite semi-transparent
-        // textColor correctly against a manually-drawn background.
-        statusBarView.fgColor = fg.blended(withFraction: 0.5, of: rulerView.rulerBg) ?? fg
+        statusBarView.fgColor = rulerView.rulerFg
         statusBarView.needsDisplay = true
 
         textView.columnGuideColor  = rulerView.rulerBorder.withAlphaComponent(0.6)
