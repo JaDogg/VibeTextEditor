@@ -676,6 +676,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         let goToLine = NSMenuItem(title: "Go to Line…", action: #selector(goToLine), keyEquivalent: "l")
         goToLine.keyEquivalentModifierMask = .command
         editMenu.addItem(goToLine)
+        editMenu.addItem(.separator())
+        // Move line up/down — Cmd+Option+↑/↓
+        let moveUp = NSMenuItem(title: "Move Line Up",   action: #selector(moveLineUp),   keyEquivalent: "\u{F700}")
+        moveUp.keyEquivalentModifierMask = [.command, .option]
+        editMenu.addItem(moveUp)
+        let moveDn = NSMenuItem(title: "Move Line Down", action: #selector(moveLineDown), keyEquivalent: "\u{F701}")
+        moveDn.keyEquivalentModifierMask = [.command, .option]
+        editMenu.addItem(moveDn)
+        editMenu.addItem(.separator())
+        let delLine = NSMenuItem(title: "Delete Line", action: #selector(deleteLine), keyEquivalent: "k")
+        delLine.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(delLine)
+        let insBelow = NSMenuItem(title: "Insert Line Below", action: #selector(insertLineBelow), keyEquivalent: "\r")
+        insBelow.keyEquivalentModifierMask = .command
+        editMenu.addItem(insBelow)
+        let insAbove = NSMenuItem(title: "Insert Line Above", action: #selector(insertLineAbove), keyEquivalent: "\r")
+        insAbove.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(insAbove)
 
         // ── Format ────────────────────────────────────────────────────────────
         let fmtItem = NSMenuItem(); bar.addItem(fmtItem)
@@ -697,6 +715,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         wrapItem.state = wordWrapEnabled ? .on : .off
         wordWrapMenuItem = wrapItem
         fmtMenu.addItem(wrapItem)
+        fmtMenu.addItem(.separator())
+        fmtMenu.addItem(NSMenuItem(title: "Uppercase",               action: #selector(uppercaseSelection),     keyEquivalent: ""))
+        fmtMenu.addItem(NSMenuItem(title: "Lowercase",               action: #selector(lowercaseSelection),     keyEquivalent: ""))
+        fmtMenu.addItem(.separator())
+        fmtMenu.addItem(NSMenuItem(title: "Trim Trailing Whitespace",action: #selector(trimTrailingWhitespace), keyEquivalent: ""))
+        fmtMenu.addItem(NSMenuItem(title: "Sort Lines",              action: #selector(sortLines),              keyEquivalent: ""))
         fmtMenu.addItem(.separator())
         let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
         let themeMenu = NSMenu(title: "Theme")
@@ -885,6 +909,138 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextView
         let newLineStart = insertAt + (toInsert.hasPrefix("\n") ? 1 : 0)
         textView.setSelectedRange(NSRange(location: newLineStart + col, length: 0))
         isModified = true; window.isDocumentEdited = true; scheduleAutoSave()
+    }
+
+    // MARK: - Line Operations
+
+    @objc func moveLineUp()   { moveLine(up: true)  }
+    @objc func moveLineDown() { moveLine(up: false) }
+
+    private func moveLine(up: Bool) {
+        let str   = textView.string as NSString
+        let sel   = textView.selectedRange()
+        let block = str.lineRange(for: sel)
+
+        if up {
+            guard block.location > 0 else { return }
+            let prev = str.lineRange(for: NSRange(location: block.location - 1, length: 0))
+            var curText  = str.substring(with: block)
+            var prevText = str.substring(with: prev)
+            // If current line has no trailing \n but previous does, transfer it
+            if !curText.hasSuffix("\n"), prevText.hasSuffix("\n") {
+                curText += "\n"; prevText = String(prevText.dropLast())
+            }
+            let combined = NSRange(location: prev.location, length: prev.length + block.length)
+            let swapped  = curText + prevText
+            if textView.shouldChangeText(in: combined, replacementString: swapped) {
+                textView.textStorage?.replaceCharacters(in: combined,
+                    with: NSAttributedString(string: swapped, attributes: textView.typingAttributes))
+                textView.didChangeText()
+            }
+            // Cursor follows its line: offset within block stays the same, block now starts at prev.location
+            textView.setSelectedRange(NSRange(location: prev.location + (sel.location - block.location),
+                                              length: sel.length))
+        } else {
+            guard block.upperBound < str.length else { return }
+            let next = str.lineRange(for: NSRange(location: block.upperBound, length: 0))
+            var curText  = str.substring(with: block)
+            var nextText = str.substring(with: next)
+            // If next line has no trailing \n but current does, transfer it
+            if !nextText.hasSuffix("\n"), curText.hasSuffix("\n") {
+                nextText += "\n"; curText = String(curText.dropLast())
+            }
+            let combined  = NSRange(location: block.location, length: block.length + next.length)
+            let swapped   = nextText + curText
+            let nextLen   = (nextText as NSString).length
+            if textView.shouldChangeText(in: combined, replacementString: swapped) {
+                textView.textStorage?.replaceCharacters(in: combined,
+                    with: NSAttributedString(string: swapped, attributes: textView.typingAttributes))
+                textView.didChangeText()
+            }
+            textView.setSelectedRange(NSRange(location: block.location + nextLen + (sel.location - block.location),
+                                              length: sel.length))
+        }
+    }
+
+    @objc func deleteLine() {
+        let str       = textView.string as NSString
+        let lineRange = str.lineRange(for: textView.selectedRange())
+        if textView.shouldChangeText(in: lineRange, replacementString: "") {
+            textView.textStorage?.replaceCharacters(in: lineRange, with: "")
+            textView.didChangeText()
+        }
+    }
+
+    @objc func insertLineBelow() {
+        let str  = textView.string as NSString
+        let line = str.lineRange(for: textView.selectedRange())
+        // Content end: strip trailing \n so cursor lands on the new empty line
+        let hasNL      = line.length > 0 && str.character(at: line.upperBound - 1) == 10
+        let contentEnd = line.upperBound - (hasNL ? 1 : 0)
+        textView.setSelectedRange(NSRange(location: contentEnd, length: 0))
+        textView.insertNewline(nil)   // re-uses existing auto-indent logic
+    }
+
+    @objc func insertLineAbove() {
+        let loc = (textView.string as NSString).lineRange(for: textView.selectedRange()).location
+        let ins = NSRange(location: loc, length: 0)
+        if textView.shouldChangeText(in: ins, replacementString: "\n") {
+            textView.textStorage?.insert(
+                NSAttributedString(string: "\n", attributes: textView.typingAttributes), at: loc)
+            textView.didChangeText()
+        }
+        textView.setSelectedRange(NSRange(location: loc, length: 0))
+    }
+
+    // MARK: - Text Transforms
+
+    @objc func uppercaseSelection() { transformSelection { $0.uppercased() } }
+    @objc func lowercaseSelection() { transformSelection { $0.lowercased() } }
+
+    private func transformSelection(_ transform: (String) -> String) {
+        let sel = textView.selectedRange()
+        guard sel.length > 0 else { return }
+        let original  = (textView.string as NSString).substring(with: sel)
+        let result    = transform(original)
+        if textView.shouldChangeText(in: sel, replacementString: result) {
+            textView.textStorage?.replaceCharacters(in: sel,
+                with: NSAttributedString(string: result, attributes: textView.typingAttributes))
+            textView.didChangeText()
+            textView.setSelectedRange(sel)
+        }
+    }
+
+    @objc func trimTrailingWhitespace() {
+        let lines  = textView.string.components(separatedBy: "\n")
+        let result = lines.map {
+            $0.replacingOccurrences(of: "[ \t]+$", with: "", options: .regularExpression)
+        }.joined(separator: "\n")
+        let full = NSRange(location: 0, length: (textView.string as NSString).length)
+        if textView.shouldChangeText(in: full, replacementString: result) {
+            textView.textStorage?.replaceCharacters(in: full,
+                with: NSAttributedString(string: result, attributes: textView.typingAttributes))
+            textView.didChangeText()
+        }
+        applyFontToStorage()
+    }
+
+    @objc func sortLines() {
+        let str = textView.string as NSString
+        let sel = textView.selectedRange()
+        let range = sel.length > 0 ? str.lineRange(for: sel)
+                                   : NSRange(location: 0, length: str.length)
+        let block = str.substring(with: range)
+        let hasTrailing = block.hasSuffix("\n")
+        var lines = block.components(separatedBy: "\n")
+        if hasTrailing, lines.last == "" { lines.removeLast() }
+        lines.sort()
+        var result = lines.joined(separator: "\n")
+        if hasTrailing { result += "\n" }
+        if textView.shouldChangeText(in: range, replacementString: result) {
+            textView.textStorage?.replaceCharacters(in: range,
+                with: NSAttributedString(string: result, attributes: textView.typingAttributes))
+            textView.didChangeText()
+        }
     }
 
     // MARK: - Word Wrap

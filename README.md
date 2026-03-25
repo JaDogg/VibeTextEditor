@@ -11,6 +11,9 @@ A minimal, distraction-free plain text editor for macOS. Single Swift source fil
 - Encoding detection: UTF-8 with Latin-1 fallback
 - Light/dark mode support with 10 built-in themes (Format → Theme)
 - Word wrap toggle (Format → Word Wrap)
+- Uppercase / Lowercase selection (Format menu)
+- Trim Trailing Whitespace (Format menu)
+- Sort Lines — sorts selection or whole document (Format menu)
 - Find bar (Cmd+F)
 - Go to Line (Cmd+L)
 - Duplicate line (Cmd+D)
@@ -33,6 +36,10 @@ A minimal, distraction-free plain text editor for macOS. Single Swift source fil
 | Find Previous | Cmd+Shift+G |
 | Go to Line | Cmd+L |
 | Duplicate Line | Cmd+D |
+| Move Line Up / Down | Cmd+Option+↑/↓ |
+| Delete Line | Cmd+Shift+K |
+| Insert Line Below | Cmd+Return |
+| Insert Line Above | Cmd+Shift+Return |
 | Indent | Tab (with selection) |
 | Dedent | Shift+Tab |
 | Font Bigger | Cmd++ |
